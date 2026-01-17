@@ -15,6 +15,10 @@ jobs:
     environment: ${{ vars.ENV_NAME }}
 
     steps:
+      - name: Print current environment
+        run: |
+          echo "environment: ${{ vars.ENV_NAME }}"
+    
       - name: Clone the repository
         uses: actions/checkout@v4
         
