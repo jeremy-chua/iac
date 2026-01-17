@@ -1,0 +1,141 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Tasky core services
+
+#------------------------------------------------------
+# Parameters
+#------------------------------------------------------
+Parameters:
+  TemplateBucketName:
+    Description: Name of the CloudFormation templates bucket
+    Type: String
+
+  AppDataBucketName:
+    Description: Name of the application data bucket
+    Type: String
+  
+  ECRRepoName:
+    Description: Name of the ECR repository
+    Type: String
+
+#------------------------------------------------------
+# Resources
+#------------------------------------------------------
+Resources:
+
+  # S3 Bucket to store CloudFormation templates
+  TemplateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref TemplateBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-cf-templates-bucket'
+
+  # S3 Bucket to store application data
+  AppDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Ref AppDataBucketName
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: false
+        BlockPublicPolicy: false
+        IgnorePublicAcls: false
+        RestrictPublicBuckets: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-app-data-bucket'
+  
+  # Application data bucket public read policy
+  AppDataBucketPublicReadOnlyPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppDataBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 
+              - s3:GetObject
+            Resource: 
+              - !Sub 'arn:aws:s3:::${AppDataBucket}/*'
+          - Sid: PublicListBucket
+            Effect: Allow
+            Principal: '*'
+            Action: 
+              - s3:ListBucket
+            Resource: 
+              - !Sub 'arn:aws:s3:::${AppDataBucket}'
+
+  # Elastic Container Registry (ECR) repository for application images
+  ECRRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      RepositoryName: !Ref ECRRepoName
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      EmptyOnDelete: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-ecr-repo'
+
+#------------------------------------------------------
+# Outputs
+#------------------------------------------------------
+Outputs:
+  TemplateBucket:
+    Description: CF Template Bucket Name
+    Value: !Ref TemplateBucket
+
+  TemplateBucketArn:
+    Description: CF Template Bucket ARN
+    Value: !GetAtt TemplateBucket.Arn
+
+  TemplateBucketPublicUrl:
+    Description: Public URL to access CF Template Bucket
+    Value: !Sub 'https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/'
+  
+  AppDataBucket:
+    Description: App Data Bucket Name
+    Value: !Ref AppDataBucket
+
+  AppDataBucketArn:
+    Description: App Data Bucket ARN
+    Value: !GetAtt TemplateBucket.Arn
+
+  AppDataBucketPublicUrl:
+    Description: Public URL to access App Data Bucket
+    Value: !Sub 'https://${TemplateBucket}.s3.${AWS::Region}.amazonaws.com/'
+  
+  ECRRepositoryUrl:
+    Description: The URI of the ECR repository
+    Value: !GetAtt ECRRepository.RepositoryUri
+  
+  ECRRepositoryName:
+    Description: The Name of the ECR repository
+    Value: !Ref ECRRepository
+
+  ECRRepositoryArn:
+    Description: The ARN of the ECR repository
+    Value: !GetAtt ECRRepository.Arn
+
+    
+  

@@ -1,0 +1,137 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Tasky EKS stack'
+
+Parameters:
+  EKSAdminUserArn:
+    Type: String
+    Description: ARN of the IAM user that will be added as admin to the EKS cluster
+
+  EKSClusterName:
+    Type: String
+    Description: EKS cluster name
+
+  EKSClusterVersion:
+    Type: String
+    Description: Kubernetes version
+  
+  EKSClusterRoleArn:
+    Type: String
+    Description: ARN of EKS Cluster IAM Role
+
+  EKSNodeRoleArn:
+    Type: String
+    Description: ARN of EKS Node IAM Role
+    
+  SubnetIds:
+    Type: String
+    Description: Comma-separated subnet IDs
+
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    Default: t3.small
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+    
+  NodeGroupMinSize:
+    Type: Number
+    Description: Minimum number of nodes in the node group
+    Default: 1
+    MinValue: 0
+    MaxValue: 3
+
+  NodeGroupMaxSize:
+    Type: Number
+    Description: Maximum number of nodes in the node group
+    Default: 3
+    MinValue: 1
+    MaxValue: 5
+
+  NodeGroupDesiredSize:
+    Type: Number
+    Description: Desired number of nodes in the node group
+    Default: 2
+    MinValue: 1
+    MaxValue: 5
+
+Resources:
+  EKSCluster:
+    Type: AWS::EKS::Cluster
+    Properties:
+      Name: !Ref EKSClusterName
+      Version: !Ref EKSClusterVersion
+      RoleArn: !Ref EKSClusterRoleArn
+      AccessConfig:
+        AuthenticationMode: API
+        BootstrapClusterCreatorAdminPermissions: false 
+      ResourcesVpcConfig:
+        SubnetIds: !Split [',', !Ref SubnetIds] 
+  
+  EKSNodeGroup:
+    Type: AWS::EKS::Nodegroup
+    Properties:
+      NodegroupName: !Sub ${AWS::StackName}-eks-ng
+      ClusterName: !Ref EKSCluster
+      NodeRole: !Ref EKSNodeRoleArn
+      InstanceTypes:
+        - !Ref InstanceType
+      Subnets: !Split [',', !Ref SubnetIds] 
+      ScalingConfig:
+        MinSize: !Ref NodeGroupMinSize
+        MaxSize: !Ref NodeGroupMaxSize
+        DesiredSize: !Ref NodeGroupDesiredSize
+
+  # Add access entry for your IAM user/role
+  EKSAdminUserAccessEntry:
+    Type: AWS::EKS::AccessEntry
+    Properties:
+      ClusterName: !Ref EKSCluster
+      PrincipalArn: !Ref EKSAdminUserArn
+      Type: STANDARD
+      AccessPolicies:
+        - PolicyArn: arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy
+          AccessScope:
+            Type: cluster
+        
+
+Outputs:
+  # ==================== Cluster Information ====================
+  ClusterName:
+    Description: EKS Cluster Name
+    Value: !Ref EKSCluster
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterName'
+
+  ClusterArn:
+    Description: EKS Cluster ARN
+    Value: !GetAtt EKSCluster.Arn
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterArn'
+
+  ClusterEndpoint:
+    Description: EKS Cluster API Endpoint
+    Value: !GetAtt EKSCluster.Endpoint
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterEndpoint'
+
+  ClusterSecurityGroupId:
+    Description: Security Group ID created by EKS for the cluster
+    Value: !GetAtt EKSCluster.ClusterSecurityGroupId
+    Export:
+      Name: !Sub '${AWS::StackName}-ClusterSecurityGroupId'
+
+  ClusterVersion:
+    Description: Kubernetes Version
+    Value: !Ref EKSClusterVersion
+
+# ==================== OIDC Information ====================
+  OIDCIssuerUrl:
+    Description: OIDC Issuer URL (for IAM roles for service accounts)
+    Value: !GetAtt EKSCluster.OpenIdConnectIssuerUrl
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCIssuerUrl'
+
+  OIDCProvider:
+    Description: OIDC Provider (without https://)
+    Value: !Select [1, !Split ['https://', !GetAtt EKSCluster.OpenIdConnectIssuerUrl]]
+    Export:
+      Name: !Sub '${AWS::StackName}-OIDCProvider'

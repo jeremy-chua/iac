@@ -1,0 +1,181 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Tasky main stack
+
+Parameters:
+  TemplateBucket:
+    Type: String
+    Description: The name of the S3 bucket where templates are stored
+  
+  AppDataBucket:
+    Type: String
+    Description: S3 Bucket for MongoDB backups
+  
+  VPCCidr:
+    Type: String
+    Description: CIDR block for the VPC
+    Default: 10.0.0.0/16
+
+  PublicSubnetCidr1:
+    Type: String
+    Description: CIDR block for public subnet 1
+    Default: 10.0.1.0/24
+
+  PublicSubnetCidr2:
+    Type: String
+    Description: CIDR block for public subnet 2
+    Default: 10.0.2.0/24
+
+  PrivateSubnetCidr1:
+    Type: String
+    Description: CIDR block for private subnet 1
+    Default: 10.0.10.0/24
+
+  PrivateSubnetCidr2:
+    Type: String
+    Description: CIDR block for private subnet 2
+    Default: 10.0.20.0/24
+    
+  KeyName:
+    Type: String
+    Description: Name of the Key Pair for SSH access
+    
+  ImageId:
+    Type: String
+    Description: AMI ID for the EC2 Instance
+    Default: ami-0464d49b8794eba32  # Region: us-east-1, DeprecationTime: 2022-07-24T20:40:28.000Z,  Name: amzn2-ami-hvm-2.0.20220912.1-x86_64-gp2
+
+  InstanceType:
+    Type: String
+    Description: EC2 Instance Type
+    Default: t3.small
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+
+  EKSClusterVersion:
+    Type: String
+    Description: Kubernetes version
+    Default: "1.34"
+
+  EKSAdminUserArn:
+    Type: String
+    Description: ARN of the IAM user that will be added as admin to the EKS cluster
+
+Resources:
+  # ==================== VPC Stack ====================
+  VPCStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: vpc.yml
+      Parameters:
+        VPCCidr: !Ref VPCCidr
+        PublicSubnetCidr1: !Ref PublicSubnetCidr1
+        PublicSubnetCidr2: !Ref PublicSubnetCidr2
+        PrivateSubnetCidr1: !Ref PrivateSubnetCidr1
+        PrivateSubnetCidr2: !Ref PrivateSubnetCidr2
+
+  # ==================== IAM Stack ====================
+  IAMStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: iam.yml
+    
+  
+  # ==================== Security Group Stack ====================
+  SecurityGroupStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: securitygroup.yml
+      Parameters:
+        VPCId: !GetAtt VPCStack.Outputs.VPCId
+
+  # ==================== EC2 Stack ====================
+  EC2Stack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ec2.yml
+      Parameters:
+        ImageId: !Ref ImageId
+        InstanceType: !Ref InstanceType
+        SubnetId: !GetAtt VPCStack.Outputs.PublicSubnet1Id
+        SecurityGroupIds: !GetAtt SecurityGroupStack.Outputs.EC2SecurityGroupId
+        InstanceProfile: !GetAtt IAMStack.Outputs.EC2InstanceProfile
+        KeyName: !Ref KeyName
+        UserData: !Sub |
+          #!/bin/bash
+          set -e
+          # Log installation process 
+          exec > >(tee /var/log/user-data.log)
+          exec 2>&1
+          echo "=== Starting user data script at $(date) ==="
+          echo " "
+          ##############################################################
+          # Install MongoDB 5.0 on Amazon Linux 2
+          ##############################################################
+          echo "=== Downloading mongodb installation script from s3://${TemplateBucket}/infra/scripts/install_mongodb_5.sh at $(date) ==="
+          aws s3 cp s3://${TemplateBucket}/infra/scripts/install_mongodb_5.sh /tmp/install_mongodb_5.sh
+          chmod +x /tmp/install_mongodb_5.sh
+          echo "=== Downloaded mongodb installation script to /tmp/install_mongodb_5.sh at $(date)"
+          /tmp/install_mongodb_5.sh
+          echo " "
+          ##############################################################
+          # Setup cron job for MongoDB backups to S3
+          ##############################################################
+          echo " "
+          echo "=== Installing and starting cron service at $(date)"
+          yum install -y cronie
+          echo " "
+          echo "=== Completed installing and starting cron service at $(date)"
+          echo " "
+          echo "Adding up environment variables to /etc/environment"
+          cat >> /etc/environment << EOL
+          APP_DATA_BUCKET=${AppDataBucket}
+          EOL
+          echo "Variables added to /etc/environment"
+          cat /etc/environment
+          echo " "
+          BACKUP_SCRIPT_FILE=mongodb_backup_to_s3.sh
+          BACKUP_SCRIPT_PATH=/usr/local/bin/$BACKUP_SCRIPT_FILE
+          echo "=== Downloading mongodb backup script from s3://${TemplateBucket}/infra/scripts/$BACKUP_SCRIPT_FILE at $(date) ==="
+          aws s3 cp s3://${TemplateBucket}/infra/scripts/$BACKUP_SCRIPT_FILE $BACKUP_SCRIPT_PATH
+          chmod +x $BACKUP_SCRIPT_PATH
+          echo "=== Downloaded mongodb backup script to BACKUP_SCRIPT_PATH at $(date)"
+          echo " "
+          echo "Setting up cron job for MongoDB backup with $BACKUP_SCRIPT_PATH..."
+          echo "0 0 * * * $BACKUP_SCRIPT_PATH >> /var/log/mongodb_backup_cron_job.log 2>&1" | crontab -
+          echo "Verifying cron job setup..."
+          crontab -l 
+          echo " "
+          echo "=== Starting cron service at $(date)"
+          systemctl start crond
+          systemctl enable crond
+          echo " "
+          echo "=== Completed starting cron service at $(date)"
+          ##############################################################
+          # Clean up installation scripts
+          ##############################################################
+          echo "Cleaning up installation script"
+          rm -vf /tmp/install_mongodb_5.sh
+          echo " "
+          echo "=== User data script completed at $(date) ==="
+          echo " "
+          echo " "
+          echo "Manual trigger first backup starting..."
+          echo " "
+          source /etc/environment
+          . $BACKUP_SCRIPT_PATH
+          echo " "
+          echo "Completed manual trigger first backup"
+          echo " "
+
+  # ==================== EKS Stack ====================
+  EKSClusterStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: eks.yml
+      Parameters:
+        EKSClusterName: !Sub ${AWS::StackName}-eks-cluster
+        EKSClusterVersion: !Ref EKSClusterVersion
+        EKSClusterRoleArn: !GetAtt IAMStack.Outputs.EKSClusterRoleArn
+        EKSNodeRoleArn: !GetAtt IAMStack.Outputs.EKSNodeRoleArn  
+        EKSAdminUserArn: !Ref EKSAdminUserArn
+        SubnetIds: !GetAtt VPCStack.Outputs.PrivateSubnetIds
+        InstanceType: !Ref InstanceType

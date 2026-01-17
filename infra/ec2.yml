@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Tasky EC2 instance stack
+
+Parameters:
+  ImageId:
+    Description: AMI ID for the EC2 Instance
+    Type: String
+
+  InstanceType:
+    Type: String
+    Description: EC2 Instance Type
+    Default: t3.micro
+    AllowedValues: [t3.micro, t3.small, t3.medium]
+    
+  SubnetId:
+    Type: String
+    Description: Subnet ID where the EC2 Instance will be launched
+
+  SecurityGroupIds:
+    Type: String
+    Description: Comma-seperated Security Group IDs to associate with the EC2 Instance
+
+  KeyName:
+    Type: String
+    Description: Name of the Key Pair for SSH access
+
+  InstanceProfile:
+    Type: String
+    Description: IAM Instance Profile Name for EC2 Instances
+
+  UserData:
+    Description: User data script for EC2 Instance
+    Type: String
+    Default: ""
+
+Resources:
+  EC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Ref ImageId
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds: !Split [',', !Ref SecurityGroupIds]
+      KeyName: !Ref KeyName
+      IamInstanceProfile: !Ref InstanceProfile
+      UserData: 
+        Fn::Base64: !Ref UserData
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-mongodb-ec2-instance
+        

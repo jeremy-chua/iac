@@ -1,0 +1,37 @@
+
+# AWS CloudFormation
+*.yaml-bak
+*.template-bak
+.aws-sam/
+packaged.yaml
+samconfig.toml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Build output
+dist/
+build/
+.serverless/
+
+# Environment variables
+.env
+.env.*
+
+# tmp folder
+tmp/
