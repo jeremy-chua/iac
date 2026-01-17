@@ -37,5 +37,5 @@ jobs:
           parameter-overrides: >-
             TemplateBucketName=${{ vars.ENV_NAME }}-${{ secrets.CF_TEMPLATES_S3_BUCKET_SUBFIX }}, 
             AppDataBucketName=${{ vars.ENV_NAME }}-${{ secrets.APP_DATA_S3_BUCKET_SUBFIX }},
-            ECRRepoName=${{ vars.ENV_NAME }}-${{ secrets.ECR_REPO_NAME_SUBFIX }}
+            ECRRepoName=${{ secrets.ECR_REPO_NAME }}
           no-fail-on-empty-changeset: "1"
