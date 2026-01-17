@@ -18,6 +18,11 @@ Resources:
           ToPort: 22
           CidrIp: 0.0.0.0/0
           Description: Allow SSH access from anywhere
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 80
+          CidrIp: 10.0.0.0/16
+          Description: Allow MongoDB access from VPC
 
 Outputs:
   EC2SecurityGroupId:
